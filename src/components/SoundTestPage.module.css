@@ -231,3 +231,15 @@
   border-color: #b0a898;
   color: #333;
 }
+
+.toggleActive {
+  background: #2c2c2c;
+  border-color: #2c2c2c;
+  color: #fff;
+}
+
+.toggleActive:hover {
+  background: #444;
+  border-color: #444;
+  color: #fff;
+}

@@ -211,6 +211,109 @@ export class SynthEngine {
     this._note(pitches[harmonyIdx], t, 0.45, { attackTime: 0.010 });
   }
 
+  // ─── Legato sequence player ──────────────────────────────────────────────────
+  //
+  // Single oscillator lives for the entire phrase. Pitch holds during each note
+  // and slides to the next pitch during the inter-note gap. A subtle amplitude
+  // dip during the gap articulates the note boundary without breaking the tone.
+  //
+  _playLegatoSequence(notes) {
+    if (!this.ctx || !notes.length) return;
+    const ctx = this.ctx;
+    const { beta, vibratoRate, vibratoDepth } = this.params;
+
+    const startTime = ctx.currentTime + 0.05;
+    const firstPitch = notes[0].pitch;
+
+    // ── Single carrier ───────────────────────────────────────────────────────
+    const carrier = ctx.createOscillator();
+    carrier.type = 'sine';
+
+    // ── FM modulator (fixed gain based on starting pitch — acceptable for legato) ─
+    const modulator = ctx.createOscillator();
+    modulator.type = 'sine';
+    const modGain = ctx.createGain();
+    modGain.gain.value = beta * firstPitch * 1.5;
+    modulator.connect(modGain);
+    modGain.connect(carrier.frequency);
+
+    // ── Vibrato ──────────────────────────────────────────────────────────────
+    const lfo = ctx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.value = vibratoRate + (Math.random() * 0.4 - 0.2);
+    const depthHz = firstPitch * (Math.pow(2, vibratoDepth / 1200) - 1);
+    const vibratoGain = ctx.createGain();
+    vibratoGain.gain.setValueAtTime(0, startTime);
+    vibratoGain.gain.setValueAtTime(0, startTime + 0.10);
+    vibratoGain.gain.linearRampToValueAtTime(depthHz, startTime + 0.20);
+    lfo.connect(vibratoGain);
+    vibratoGain.connect(carrier.frequency);
+
+    // ── Phrase amplitude envelope ─────────────────────────────────────────────
+    const envGain = ctx.createGain();
+    envGain.gain.setValueAtTime(0.0001, startTime);
+    envGain.gain.exponentialRampToValueAtTime(0.85, startTime + 0.025);
+
+    // ── Schedule pitch and amplitude for each note ────────────────────────────
+    carrier.frequency.setValueAtTime(firstPitch, startTime);
+    modulator.frequency.setValueAtTime(firstPitch * 1.5, startTime);
+
+    let t = startTime;
+    for (let i = 0; i < notes.length; i++) {
+      const { pitch, duration, gap } = notes[i];
+      const noteEnd = t + duration;
+      const gapEnd  = noteEnd + gap;
+      const next    = notes[i + 1];
+
+      // Hold pitch steady during the note
+      carrier.frequency.setValueAtTime(pitch, t);
+      modulator.frequency.setValueAtTime(pitch * 1.5, t);
+
+      if (next) {
+        // Slide to next pitch across the gap
+        carrier.frequency.setValueAtTime(pitch, noteEnd);
+        carrier.frequency.exponentialRampToValueAtTime(next.pitch, gapEnd);
+        modulator.frequency.setValueAtTime(pitch * 1.5, noteEnd);
+        modulator.frequency.exponentialRampToValueAtTime(next.pitch * 1.5, gapEnd);
+
+        // Gentle amplitude dip during gap — feels like breath rather than silence
+        if (gap > 0.025) {
+          envGain.gain.setValueAtTime(0.85, noteEnd);
+          envGain.gain.linearRampToValueAtTime(0.55, noteEnd + gap * 0.5);
+          envGain.gain.linearRampToValueAtTime(0.85, gapEnd);
+        }
+      }
+
+      t = gapEnd;
+    }
+
+    // ── Release ───────────────────────────────────────────────────────────────
+    envGain.gain.setValueAtTime(0.85, t);
+    envGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.20);
+
+    const stopTime = t + 0.28;
+
+    carrier.connect(envGain);
+    envGain.connect(this.masterGain);
+
+    carrier.start(startTime);
+    carrier.stop(stopTime);
+    modulator.start(startTime);
+    modulator.stop(stopTime);
+    lfo.start(startTime);
+    lfo.stop(stopTime);
+  }
+
+  playSongLegato(song) {
+    if (!this.ctx || !song) return;
+    this._playLegatoSequence(song.melody);
+  }
+
+  playHarmonyLegato(song) {
+    if (!this.ctx || !song) return;
+    this._playLegatoSequence(song.harmony);
+  }
+
   playSong(song) {
     if (!this.ctx || !song) return;
     const { glissandoTime } = this.params;

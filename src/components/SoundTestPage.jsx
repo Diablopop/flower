@@ -146,6 +146,7 @@ export function SoundTestPage() {
   const [initialized, setInitialized] = useState(false);
   const [params, setParams] = useState(initialParams());
   const [activeSound, setActiveSound] = useState(null);
+  const [legato, setLegato] = useState(false);
   const synthRef = useRef(null);
   const songRef = useRef(null);
 
@@ -173,8 +174,8 @@ export function SoundTestPage() {
       case 'greeting': s.playGreeting(); break;
       case 'reply':    s.playReply(880); break;
       case 'echo':     s.playEcho(880); break;
-      case 'song':     s.playSong(songRef.current); break;
-      case 'harmony':  s.playHarmony(songRef.current); break;
+      case 'song':    legato ? s.playSongLegato(songRef.current)   : s.playSong(songRef.current);   break;
+      case 'harmony': legato ? s.playHarmonyLegato(songRef.current) : s.playHarmony(songRef.current); break;
     }
   }, [applyParams]);
 
@@ -221,7 +222,16 @@ export function SoundTestPage() {
 
           {/* ── Sound buttons ──────────────────────────────────────── */}
           <section className={styles.section}>
-            <h2 className={styles.sectionTitle}>Sounds</h2>
+            <div className={styles.sectionHeader}>
+              <h2 className={styles.sectionTitle}>Sounds</h2>
+              <button
+                className={`${styles.secondaryButton} ${legato ? styles.toggleActive : ''}`}
+                onClick={() => setLegato(v => !v)}
+                title="Song and Harmony use a single continuous oscillator — pitch slides between notes rather than restarting"
+              >
+                {legato ? 'Legato on' : 'Legato off'}
+              </button>
+            </div>
             <div className={styles.soundGrid}>
               {SOUND_BUTTONS.map(({ id, label, desc }) => (
                 <button
