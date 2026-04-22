@@ -2,12 +2,14 @@ import { getPentatonicPitches } from '../utils/pentatonic.js';
 
 // Default synthesis parameters — tunable from the test page
 const DEFAULTS = {
-  beta: 1.0,          // FM modulation index (0.5–2.0; 0.8–1.2 is target range)
-  vibratoRate: 5.5,   // LFO frequency in Hz
-  vibratoDepth: 3,    // peak vibrato depth in cents
-  attackTime: 0.015,  // amplitude attack in seconds
-  decayTime: 0.40,    // amplitude decay in seconds
-  volume: 0.70,       // master gain (0–1)
+  beta: 1.0,            // FM modulation index (0.5–2.0; 0.8–1.2 is target range)
+  vibratoRate: 5.5,     // LFO frequency in Hz
+  vibratoDepth: 3,      // peak vibrato depth in cents
+  attackTime: 0.015,    // amplitude attack in seconds
+  sustainLevel: 0.75,   // amplitude held after attack peak (0–1)
+  releaseTime: 0.10,    // fade from sustain to silence in seconds
+  glissandoTime: 0.045, // time to slide from previous note pitch to this one (seconds)
+  volume: 0.70,         // master gain (0–1)
 };
 
 export class SynthEngine {
@@ -36,43 +38,66 @@ export class SynthEngine {
   // Plays a single note and returns the scheduled end time (for sequencing).
   //
   // Options:
-  //   useFM        — use FM synthesis (true) or pure sine (false, for whistle replies)
-  //   pitchEnd     — optional Hz for a pitch glide from pitch → pitchEnd
+  //   useFM        — FM synthesis (true) or pure sine (false, for whistle replies)
+  //   pitchEnd     — optional Hz for a downward chirp glide: pitch → pitchEnd
   //   attackTime   — override default attack
   //   vibratoDelay — seconds before vibrato fades in (default 0.08)
+  //   glissFrom    — if set, carrier slides from this Hz to `pitch` over glissandoTime
   //
   _note(pitch, startTime, duration, {
     useFM = true,
     pitchEnd = null,
     attackTime = null,
     vibratoDelay = 0.08,
+    glissFrom = null,
   } = {}) {
     const ctx = this.ctx;
-    const { beta, vibratoRate, vibratoDepth, decayTime } = this.params;
+    const { beta, vibratoRate, vibratoDepth, sustainLevel, releaseTime, glissandoTime } = this.params;
     const attack = attackTime ?? this.params.attackTime;
-    const tail = 0.06; // extra buffer after scheduled end so oscillators decay cleanly
+    const release = Math.min(releaseTime, duration * 0.45); // never eat more than 45% of note
+    const peakDecay = Math.min(0.025, duration * 0.08);     // brief A→D drop to sustain level
+    const tail = 0.06;
 
-    // ── Carrier ──────────────────────────────────────────────────────────────
+    // ── Carrier ───────────────────────────────────────────────────────────────
     const carrier = ctx.createOscillator();
     carrier.type = 'sine';
-    carrier.frequency.setValueAtTime(pitch, startTime);
-    if (pitchEnd !== null && pitchEnd !== pitch) {
-      // Glide reaches pitchEnd at ~70% of the note duration
-      carrier.frequency.exponentialRampToValueAtTime(pitchEnd, startTime + duration * 0.70);
+
+    // Glissando: slide in from the previous note's pitch, then settle at `pitch`
+    if (glissFrom !== null && glissFrom !== pitch) {
+      carrier.frequency.setValueAtTime(glissFrom, startTime);
+      carrier.frequency.exponentialRampToValueAtTime(pitch, startTime + glissandoTime);
+    } else {
+      carrier.frequency.setValueAtTime(pitch, startTime);
     }
 
-    // ── Amplitude envelope ───────────────────────────────────────────────────
+    // Chirp-style downward pitch glide (applied after any incoming glissando)
+    if (pitchEnd !== null && pitchEnd !== pitch) {
+      const glideFrom = glissFrom !== null ? startTime + glissandoTime : startTime;
+      const glideEnd = startTime + duration * 0.72;
+      if (glideEnd > glideFrom) {
+        carrier.frequency.exponentialRampToValueAtTime(pitchEnd, glideEnd);
+      }
+    }
+
+    // ── ADSR amplitude envelope ───────────────────────────────────────────────
     const envGain = ctx.createGain();
+    const peakTime     = startTime + attack;
+    const sustainTime  = peakTime + peakDecay;
+    const releaseStart = Math.max(sustainTime, startTime + duration - release);
+
     envGain.gain.setValueAtTime(0.0001, startTime);
-    envGain.gain.exponentialRampToValueAtTime(1.0, startTime + attack);
+    envGain.gain.exponentialRampToValueAtTime(1.0, peakTime);
+    envGain.gain.exponentialRampToValueAtTime(sustainLevel, sustainTime);
+    if (releaseStart > sustainTime) {
+      envGain.gain.setValueAtTime(sustainLevel, releaseStart); // hold sustain
+    }
     envGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
-    // ── Vibrato (delayed onset) ───────────────────────────────────────────────
+    // ── Vibrato (delayed onset) ────────────────────────────────────────────────
     const lfo = ctx.createOscillator();
     lfo.type = 'sine';
-    lfo.frequency.value = vibratoRate + (Math.random() * 0.6 - 0.3); // slight per-note jitter
+    lfo.frequency.value = vibratoRate + (Math.random() * 0.6 - 0.3);
 
-    // Convert cents depth to Hz deviation for this specific pitch
     const depthHz = pitch * (Math.pow(2, vibratoDepth / 1200) - 1);
     const vibratoGain = ctx.createGain();
     vibratoGain.gain.setValueAtTime(0, startTime);
@@ -85,17 +110,28 @@ export class SynthEngine {
     lfo.connect(vibratoGain);
     vibratoGain.connect(carrier.frequency);
 
-    // ── FM modulator ─────────────────────────────────────────────────────────
+    // ── FM modulator ──────────────────────────────────────────────────────────
     if (useFM) {
-      const fm = pitch * 1.5; // modulator frequency (carrier:modulator = 1:1.5)
+      const fm = pitch * 1.5;
       const modulator = ctx.createOscillator();
       modulator.type = 'sine';
-      modulator.frequency.setValueAtTime(fm, startTime);
-      if (pitchEnd !== null && pitchEnd !== pitch) {
-        modulator.frequency.exponentialRampToValueAtTime(pitchEnd * 1.5, startTime + duration * 0.70);
+
+      // Modulator frequency tracks carrier glissando so sidebands stay coherent
+      if (glissFrom !== null && glissFrom !== pitch) {
+        modulator.frequency.setValueAtTime(glissFrom * 1.5, startTime);
+        modulator.frequency.exponentialRampToValueAtTime(fm, startTime + glissandoTime);
+      } else {
+        modulator.frequency.setValueAtTime(fm, startTime);
       }
 
-      // Modulator gain = β × fm → peak frequency deviation = β × fm Hz
+      if (pitchEnd !== null && pitchEnd !== pitch) {
+        const glideFrom = glissFrom !== null ? startTime + glissandoTime : startTime;
+        const glideEnd = startTime + duration * 0.72;
+        if (glideEnd > glideFrom) {
+          modulator.frequency.exponentialRampToValueAtTime(pitchEnd * 1.5, glideEnd);
+        }
+      }
+
       const modGain = ctx.createGain();
       modGain.gain.value = beta * fm;
 
@@ -106,7 +142,7 @@ export class SynthEngine {
       modulator.stop(startTime + duration + tail);
     }
 
-    // ── Wire and schedule ────────────────────────────────────────────────────
+    // ── Wire and schedule ─────────────────────────────────────────────────────
     carrier.connect(envGain);
     envGain.connect(this.masterGain);
 
@@ -125,77 +161,83 @@ export class SynthEngine {
     const now = this.ctx.currentTime + 0.02;
     const pitches = getPentatonicPitches(800, 2800);
     const pitch = pitches[Math.floor(Math.random() * pitches.length)];
-    // Downward pitch glide: -80 to -180 cents
     const glideCents = -(80 + Math.random() * 100);
     const pitchEnd = pitch * Math.pow(2, glideCents / 1200);
-    this._note(pitch, now, 0.45, { pitchEnd, attackTime: 0.010 });
+    this._note(pitch, now, 0.55, { pitchEnd, attackTime: 0.010 });
   }
 
   playTwoNotePhrase() {
     if (!this.ctx) return;
+    const { glissandoTime } = this.params;
     let t = this.ctx.currentTime + 0.02;
     const pitches = getPentatonicPitches(700, 2000);
-    // Pick a starting index with room for at least one step up
     const idx = Math.floor(Math.random() * (pitches.length - 1));
     const p1 = pitches[idx];
-    const p2 = pitches[idx + 1]; // ascending pentatonic step
-    t = this._note(p1, t, 0.25, { attackTime: 0.010 });
-    t += 0.04; // inter-note gap
-    this._note(p2, t, 0.32, { attackTime: 0.012 });
+    const p2 = pitches[idx + 1];
+    t = this._note(p1, t, 0.38, { attackTime: 0.010 });
+    t += Math.max(0, 0.02 - glissandoTime * 0.5);
+    this._note(p2, t, 0.45, { attackTime: 0.010, glissFrom: p1 });
   }
 
   playGreeting() {
     if (!this.ctx) return;
+    const { glissandoTime } = this.params;
     let t = this.ctx.currentTime + 0.02;
     const pitches = getPentatonicPitches(1000, 2800);
     if (pitches.length < 3) return;
-    // Two-note ascending call, wider interval (skip one step), faster & brighter
     const idx = Math.floor(Math.random() * (pitches.length - 2));
     const p1 = pitches[idx];
-    const p2 = pitches[idx + 2]; // pentatonic third (two steps)
-    t = this._note(p1, t, 0.18, { attackTime: 0.008, vibratoDelay: 0.05 });
-    t += 0.025;
-    this._note(p2, t, 0.28, { attackTime: 0.008, vibratoDelay: 0.06 });
+    const p2 = pitches[idx + 2];
+    t = this._note(p1, t, 0.25, { attackTime: 0.008, vibratoDelay: 0.05 });
+    t += Math.max(0, 0.01 - glissandoTime * 0.5);
+    this._note(p2, t, 0.35, { attackTime: 0.008, vibratoDelay: 0.06, glissFrom: p1 });
   }
 
-  // For M1, detectedPitch is a fixed value supplied by the caller (e.g. 880 Hz)
   playReply(detectedPitch = 880) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime + 0.02;
-    // Pure sine (no FM) — mimics the human's whistle
-    // Small random pitch variation ±50 cents
     const centsOffset = (Math.random() * 100) - 50;
     const pitch = detectedPitch * Math.pow(2, centsOffset / 1200);
-    this._note(pitch, t, 0.40, { useFM: false, attackTime: 0.015, vibratoDelay: 0.06 });
+    this._note(pitch, t, 0.50, { useFM: false, attackTime: 0.015, vibratoDelay: 0.06 });
   }
 
-  // For M1, detectedPitch is fixed; Flower responds a pentatonic third above
   playEcho(detectedPitch = 880) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime + 0.02;
     const pitches = getPentatonicPitches(600, 3200);
-    // Find nearest pentatonic pitch to detectedPitch, then step up 2 (a third)
     const idx = pitches.reduce((best, p, i) =>
       Math.abs(p - detectedPitch) < Math.abs(pitches[best] - detectedPitch) ? i : best, 0);
     const harmonyIdx = Math.min(idx + 2, pitches.length - 1);
-    this._note(pitches[harmonyIdx], t, 0.38, { attackTime: 0.010 });
+    this._note(pitches[harmonyIdx], t, 0.45, { attackTime: 0.010 });
   }
 
   playSong(song) {
     if (!this.ctx || !song) return;
+    const { glissandoTime } = this.params;
     let t = this.ctx.currentTime + 0.05;
+    let prevPitch = null;
     for (const note of song.melody) {
-      t = this._note(note.pitch, t, note.duration, { attackTime: 0.015 });
-      t += note.gap;
+      t = this._note(note.pitch, t, note.duration, {
+        attackTime: 0.015,
+        glissFrom: prevPitch,
+      });
+      prevPitch = note.pitch;
+      t += Math.max(0, note.gap - glissandoTime * 0.5);
     }
   }
 
   playHarmony(song) {
     if (!this.ctx || !song) return;
+    const { glissandoTime } = this.params;
     let t = this.ctx.currentTime + 0.05;
+    let prevPitch = null;
     for (const note of song.harmony) {
-      t = this._note(note.pitch, t, note.duration, { attackTime: 0.015 });
-      t += note.gap;
+      t = this._note(note.pitch, t, note.duration, {
+        attackTime: 0.015,
+        glissFrom: prevPitch,
+      });
+      prevPitch = note.pitch;
+      t += Math.max(0, note.gap - glissandoTime * 0.5);
     }
   }
 }

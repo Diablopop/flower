@@ -80,17 +80,37 @@ const PARAM_DEFS = [
     step: 1,
     default: 15,
     unit: ' ms',
-    note: 'Amplitude attack. 10–30 ms target.',
+    note: 'Rise to peak. 10–20 ms is natural.',
   },
   {
-    key: 'decayTime',
-    label: 'Decay',
-    min: 100,
-    max: 1200,
-    step: 10,
-    default: 400,
+    key: 'sustainLevel',
+    label: 'Sustain Level',
+    min: 0,
+    max: 1,
+    step: 0.01,
+    default: 0.75,
+    unit: '',
+    note: 'Amplitude held after peak. 0.7–0.85 is full whistle.',
+  },
+  {
+    key: 'releaseTime',
+    label: 'Release',
+    min: 20,
+    max: 300,
+    step: 5,
+    default: 100,
     unit: ' ms',
-    note: 'Total note length. ~400 ms for chirps.',
+    note: 'Fade from sustain to silence.',
+  },
+  {
+    key: 'glissandoTime',
+    label: 'Glissando',
+    min: 0,
+    max: 120,
+    step: 5,
+    default: 45,
+    unit: ' ms',
+    note: 'Slide between consecutive notes. 0 = hard jump.',
   },
   {
     key: 'volume',
@@ -111,13 +131,14 @@ function initialParams() {
   }, {});
 }
 
-// Converts slider storage value → synthesizer value
-// (attackTime and decayTime are stored as ms but synth expects seconds)
+// Converts slider storage values → synthesizer values
+// (time fields are stored as ms in the UI but the synth expects seconds)
 function toSynthParams(params) {
   return {
     ...params,
     attackTime: params.attackTime / 1000,
-    decayTime: params.decayTime / 1000,
+    releaseTime: params.releaseTime / 1000,
+    glissandoTime: params.glissandoTime / 1000,
   };
 }
 
