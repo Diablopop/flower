@@ -2,14 +2,14 @@ import { getPentatonicPitches } from '../utils/pentatonic.js';
 
 // Default synthesis parameters — tunable from the test page
 const DEFAULTS = {
-  beta: 1.0,            // FM modulation index (0.5–2.0; 0.8–1.2 is target range)
+  beta: 0.35,           // FM modulation index — tuned 2026-04-22
   vibratoRate: 5.5,     // LFO frequency in Hz
-  vibratoDepth: 3,      // peak vibrato depth in cents
-  attackTime: 0.015,    // amplitude attack in seconds
-  sustainLevel: 0.75,   // amplitude held after attack peak (0–1)
-  releaseTime: 0.10,    // fade from sustain to silence in seconds
-  glissandoTime: 0.045, // time to slide from previous note pitch to this one (seconds)
-  volume: 0.70,         // master gain (0–1)
+  vibratoDepth: 6.5,    // peak vibrato depth in cents
+  attackTime: 0.005,    // amplitude attack in seconds
+  sustainLevel: 0.80,   // amplitude held after attack peak (0–1)
+  releaseTime: 0.275,   // fade from sustain to silence in seconds
+  glissandoTime: 0.030, // time to slide from previous note pitch to this one (seconds)
+  volume: 0.50,         // master gain (0–1)
 };
 
 export class SynthEngine {
