@@ -70,7 +70,7 @@ export class SynthEngine {
       carrier.frequency.setValueAtTime(pitch, startTime);
     }
 
-    // Chirp-style downward pitch glide (applied after any incoming glissando)
+    // Pitch glide: carrier sweeps from `pitch` to `pitchEnd` (applied after any incoming glissando)
     if (pitchEnd !== null && pitchEnd !== pitch) {
       const glideFrom = glissFrom !== null ? startTime + glissandoTime : startTime;
       const glideEnd = startTime + duration * 0.72;
@@ -161,7 +161,7 @@ export class SynthEngine {
     const now = this.ctx.currentTime + 0.02;
     const pitches = getPentatonicPitches(800, 2800);
     const pitch = pitches[Math.floor(Math.random() * pitches.length)];
-    const glideCents = -(80 + Math.random() * 100);
+    const glideCents = 80 + Math.random() * 100;
     const pitchEnd = pitch * Math.pow(2, glideCents / 1200);
     this._note(pitch, now, 0.55, { pitchEnd, attackTime: 0.010 });
   }
