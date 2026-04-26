@@ -15,7 +15,14 @@ export class MicAnalyzer {
 
   async start(audioCtx) {
     this._ctx = audioCtx;
-    this._stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    this._stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
+      video: false,
+    });
 
     const source = audioCtx.createMediaStreamSource(this._stream);
     this._analyser = audioCtx.createAnalyser();
