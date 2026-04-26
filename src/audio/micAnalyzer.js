@@ -29,7 +29,7 @@ export class MicAnalyzer {
     const source = audioCtx.createMediaStreamSource(this._stream);
     this._analyser = audioCtx.createAnalyser();
     this._analyser.fftSize = this.fftSize;
-    this._analyser.smoothingTimeConstant = 0.6;
+    this._analyser.smoothingTimeConstant = 0.1;
     source.connect(this._analyser);
 
     this._detector = new ToneDetector(this._analyser, audioCtx.sampleRate);
