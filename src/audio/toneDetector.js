@@ -4,7 +4,7 @@
 
 const MIN_FREQ = 800;
 const MAX_FREQ = 2000;
-const MIN_SNR_DB = 12;    // minimum peak-above-noise to count as a real tone
+const MIN_SNR_DB = 8;     // minimum peak-above-noise to count as a real tone
 const MIN_PEAK_DB = -70;  // ignore bins that are just noise floor garbage
 
 export class ToneDetector {
