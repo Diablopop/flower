@@ -4,8 +4,9 @@ import { detectPitch, freqToNote } from './yin';
 // Calls onPitch({ freq, note }) on each frame where a pitch is detected.
 // Calls onPitch(null) when no pitch is detected.
 export class MicAnalyzer {
-  constructor({ onPitch, fftSize = 4096 } = {}) {
+  constructor({ onPitch, onLevel, fftSize = 4096 } = {}) {
     this.onPitch = onPitch;
+    this.onLevel = onLevel;
     this.fftSize = fftSize;
     this._rafId = null;
     this._stream = null;
@@ -34,7 +35,9 @@ export class MicAnalyzer {
     for (let i = 0; i < this._buffer.length; i++) rms += this._buffer[i] ** 2;
     rms = Math.sqrt(rms / this._buffer.length);
 
-    if (rms < 0.01) {
+    this.onLevel?.(rms);
+
+    if (rms < 0.003) {
       this.onPitch?.(null);
       return;
     }

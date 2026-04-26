@@ -13,6 +13,7 @@ export default function ListenPage() {
   const [listening, setListening] = useState(false);
   const [micError, setMicError] = useState(null);
   const [livePitch, setLivePitch] = useState(null);
+  const [rmsLevel, setRmsLevel] = useState(0);
   const [attempts, setAttempts] = useState([]);
   const [lastResult, setLastResult] = useState(null);
 
@@ -35,6 +36,7 @@ export default function ListenPage() {
           setLivePitch(reading);
           matcher.feed(reading);
         },
+        onLevel: rms => setRmsLevel(rms),
       });
       analyzerRef.current = analyzer;
       await analyzer.start(audioCtxRef.current);
@@ -144,6 +146,19 @@ export default function ListenPage() {
       </div>
 
       {micError && <div className={styles.error}>{micError}</div>}
+
+      {/* Signal level meter */}
+      <div className={styles.meterWrap}>
+        <span className={styles.meterLabel}>Signal level</span>
+        <div className={styles.meterTrack}>
+          <div
+            className={styles.meterFill}
+            style={{ width: `${Math.min(100, (Math.log10(1 + rmsLevel * 300) / Math.log10(31)) * 100)}%` }}
+          />
+          <div className={styles.meterGate} title="Detection gate" />
+        </div>
+        <span className={styles.meterRms}>{listening ? rmsLevel.toFixed(4) : '—'}</span>
+      </div>
 
       {/* Live pitch display */}
       <div className={`${styles.liveBox} ${listening ? styles.liveActive : ''}`}>

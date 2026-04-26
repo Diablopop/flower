@@ -2,7 +2,7 @@
 // Operates on a Float32Array of time-domain audio samples.
 // Returns detected frequency in Hz, or null if no confident pitch found.
 
-const THRESHOLD = 0.12; // lower = stricter confidence
+const THRESHOLD = 0.15; // lower = stricter confidence
 
 export function detectPitch(buffer, sampleRate) {
   const bufSize = buffer.length;
