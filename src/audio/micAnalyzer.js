@@ -1,8 +1,10 @@
-import { detectPitch, freqToNote } from './yin';
+import { freqToNote } from './yin';
+import { ToneDetector } from './toneDetector';
 
-// Wraps a microphone stream and runs YIN pitch detection at ~30fps.
-// Calls onPitch({ freq, note }) on each frame where a pitch is detected.
-// Calls onPitch(null) when no pitch is detected.
+// Wraps a microphone stream and runs FFT-based tone detection at ~30fps.
+// Calls onPitch({ freq, note, snrDb }) when a tone is detected.
+// Calls onPitch(null) when no tone is detected.
+// Calls onLevel({ snrDb, peakDb, noiseFloor }) every frame for UI display.
 export class MicAnalyzer {
   constructor({ onPitch, onLevel, fftSize = 4096 } = {}) {
     this.onPitch = onPitch;
@@ -27,32 +29,22 @@ export class MicAnalyzer {
     const source = audioCtx.createMediaStreamSource(this._stream);
     this._analyser = audioCtx.createAnalyser();
     this._analyser.fftSize = this.fftSize;
+    this._analyser.smoothingTimeConstant = 0.6;
     source.connect(this._analyser);
 
-    this._buffer = new Float32Array(this.fftSize);
+    this._detector = new ToneDetector(this._analyser, audioCtx.sampleRate);
     this._loop();
   }
 
   _loop() {
     this._rafId = requestAnimationFrame(() => this._loop());
-    this._analyser.getFloatTimeDomainData(this._buffer);
 
-    // Check RMS — don't bother running YIN on silence
-    let rms = 0;
-    for (let i = 0; i < this._buffer.length; i++) rms += this._buffer[i] ** 2;
-    rms = Math.sqrt(rms / this._buffer.length);
+    const result = this._detector.detect();
+    this.onLevel?.(result);
 
-    this.onLevel?.(rms);
-
-    if (rms < 0.003) {
-      this.onPitch?.(null);
-      return;
-    }
-
-    const freq = detectPitch(this._buffer, this._ctx.sampleRate);
-    if (freq) {
-      const note = freqToNote(freq);
-      this.onPitch?.({ freq, note });
+    if (result.freq) {
+      const note = freqToNote(result.freq);
+      this.onPitch?.({ freq: result.freq, note, snrDb: result.snrDb });
     } else {
       this.onPitch?.(null);
     }

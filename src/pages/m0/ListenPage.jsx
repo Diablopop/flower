@@ -13,7 +13,7 @@ export default function ListenPage() {
   const [listening, setListening] = useState(false);
   const [micError, setMicError] = useState(null);
   const [livePitch, setLivePitch] = useState(null);
-  const [rmsLevel, setRmsLevel] = useState(0);
+  const [levelInfo, setLevelInfo] = useState(null);
   const [attempts, setAttempts] = useState([]);
   const [lastResult, setLastResult] = useState(null);
 
@@ -36,7 +36,7 @@ export default function ListenPage() {
           setLivePitch(reading);
           matcher.feed(reading);
         },
-        onLevel: rms => setRmsLevel(rms),
+        onLevel: info => setLevelInfo(info),
       });
       analyzerRef.current = analyzer;
       await analyzer.start(audioCtxRef.current);
@@ -147,17 +147,20 @@ export default function ListenPage() {
 
       {micError && <div className={styles.error}>{micError}</div>}
 
-      {/* Signal level meter */}
+      {/* SNR meter */}
       <div className={styles.meterWrap}>
-        <span className={styles.meterLabel}>Signal level</span>
+        <span className={styles.meterLabel}>SNR</span>
         <div className={styles.meterTrack}>
           <div
             className={styles.meterFill}
-            style={{ width: `${Math.min(100, (Math.log10(1 + rmsLevel * 300) / Math.log10(31)) * 100)}%` }}
+            style={{ width: listening && levelInfo ? `${Math.min(100, Math.max(0, (levelInfo.snrDb / 40) * 100))}%` : '0%' }}
           />
-          <div className={styles.meterGate} title="Detection gate" />
+          {/* Marker at 12 dB detection threshold */}
+          <div className={styles.meterGate} title="12 dB detection threshold" />
         </div>
-        <span className={styles.meterRms}>{listening ? rmsLevel.toFixed(4) : '—'}</span>
+        <span className={styles.meterRms}>
+          {listening && levelInfo ? `${levelInfo.snrDb.toFixed(1)} dB` : '—'}
+        </span>
       </div>
 
       {/* Live pitch display */}

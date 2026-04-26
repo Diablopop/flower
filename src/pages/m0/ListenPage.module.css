@@ -220,11 +220,11 @@
   min-width: 0;
 }
 
-/* Marker at the gate threshold (~0.003 maps to ~10% of log scale) */
+/* Marker at 12 dB SNR threshold (12/40 = 30% of scale) */
 .meterGate {
   position: absolute;
   top: -3px;
-  left: 10%;
+  left: 30%;
   width: 2px;
   height: 16px;
   background: #1a73e8;
@@ -232,7 +232,7 @@
 }
 
 .meterGate::after {
-  content: 'gate';
+  content: '12dB';
   position: absolute;
   top: 18px;
   left: 50%;
